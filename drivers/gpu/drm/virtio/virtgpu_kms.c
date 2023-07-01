@@ -116,21 +116,45 @@ static void virtio_gpu_get_capsets(struct virtio_gpu_device *vgdev,
 
 int virtio_gpu_find_vqs(struct virtio_gpu_device *vgdev)
 {
-	struct virtqueue_info vqs_info[] = {
-		{ "control", virtio_gpu_ctrl_ack },
-		{ "cursor", virtio_gpu_cursor_ack },
-	};
-	struct virtqueue *vqs[2];
+	struct virtqueue_info *vqs_info;
+	struct virtqueue **vqs;
+	int i, total_vqs;
 	int ret;
 
-	ret = virtio_find_vqs(vgdev->vdev, 2, vqs, vqs_info, NULL);
+	total_vqs = vgdev->num_vblankq + 2;
+	vqs = kcalloc(total_vqs, sizeof(*vqs), GFP_KERNEL);
+	vqs_info = kmalloc_array(total_vqs, sizeof(struct virtqueue_info),
+				  GFP_KERNEL);
+
+	if (!vqs_info || !vqs) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	vqs_info[0].callback = virtio_gpu_ctrl_ack;
+	vqs_info[1].callback = virtio_gpu_cursor_ack;
+	vqs_info[0].name = "control";
+	vqs_info[1].name = "cursor";
+	for (i = 2; i < total_vqs; i++) {
+		vqs_info[i].callback = virtio_gpu_vblank_ack;
+		vqs_info[i].name = "vblank";
+	}
+
+	ret = virtio_find_vqs(vgdev->vdev, total_vqs, vqs, vqs_info, NULL);
 	if (ret)
-		return ret;
+		goto out;
 
 	vgdev->ctrlq.vq = vqs[0];
 	vgdev->cursorq.vq = vqs[1];
 
-	return 0;
+	for (i = 2; i < total_vqs; i++)
+		vgdev->vblank[i-2].vblank.vq = vqs[i];
+
+	ret = 0;
+out:
+	kfree(vqs_info);
+	kfree(vqs);
+	return ret;
 }
 
 int virtio_gpu_init(struct virtio_device *vdev, struct drm_device *dev)
@@ -188,6 +212,9 @@ int virtio_gpu_init(struct virtio_device *vdev, struct drm_device *dev)
 	if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_SCALING)) {
 		vgdev->has_scaling = true;
 	}
+	if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_VBLANK)) {
+		vgdev->has_vblank = true;
+	}
 	if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_RESOURCE_BLOB)) {
 		vgdev->has_resource_blob = true;
 		if (virtio_has_feature(vgdev->vdev, VIRTIO_GPU_F_MODIFIER)) {
@@ -225,6 +252,14 @@ int virtio_gpu_init(struct virtio_device *vdev, struct drm_device *dev)
 
 	DRM_INFO("features: %ccontext_init\n",
 		 vgdev->has_context_init ? '+' : '-');
+
+	vgdev->num_vblankq = 0;
+	if(vgdev->has_vblank)
+		virtio_cread_le(vgdev->vdev, struct virtio_gpu_config,
+				num_pipe, &vgdev->num_vblankq);
+
+	for(i=0; i<vgdev->num_vblankq; i++)
+		spin_lock_init(&vgdev->vblank[i].vblank.qlock);
 
 	ret = virtio_gpu_find_vqs(vgdev);
 	if (ret) {
