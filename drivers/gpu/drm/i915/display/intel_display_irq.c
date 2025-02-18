@@ -36,7 +36,7 @@ intel_display_irq_regs_init(struct intel_display *display, struct i915_irq_regs 
 	intel_dmc_wl_get(display, regs.ier);
 	intel_dmc_wl_get(display, regs.iir);
 
-	gen2_irq_init(to_intel_uncore(display->drm), regs, imr_val, ier_val);
+	gen2_irq_init(__to_uncore(display), regs, imr_val, ier_val);
 
 	intel_dmc_wl_put(display, regs.iir);
 	intel_dmc_wl_put(display, regs.ier);
@@ -50,7 +50,7 @@ intel_display_irq_regs_reset(struct intel_display *display, struct i915_irq_regs
 	intel_dmc_wl_get(display, regs.ier);
 	intel_dmc_wl_get(display, regs.iir);
 
-	gen2_irq_reset(to_intel_uncore(display->drm), regs);
+	gen2_irq_reset(__to_uncore(display), regs);
 
 	intel_dmc_wl_put(display, regs.iir);
 	intel_dmc_wl_put(display, regs.ier);
@@ -62,7 +62,7 @@ intel_display_irq_regs_assert_irr_is_zero(struct intel_display *display, i915_re
 {
 	intel_dmc_wl_get(display, reg);
 
-	gen2_assert_iir_is_zero(to_intel_uncore(display->drm), reg);
+	gen2_assert_iir_is_zero(__to_uncore(display), reg);
 
 	intel_dmc_wl_put(display, reg);
 }
